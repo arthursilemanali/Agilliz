@@ -1,6 +1,6 @@
 # 🚚 Agilliz - Logistics ERP 
 
-> **Note:** This repository contains a local copy of the Agilliz project, developed collaboratively by a team of engineering students. This copy is showcased in my portfolio to highlight my specific contributions to the system's architecture, integrations, and frontend structure.
+> **Note:** This repository contains a local copy of the Agilliz project, developed collaboratively by a team of engineering students. This copy is showcased in my portfolio to highlight my specific contributions to the system's architecture and integrations
 
 ## 📋 About the Project
 Agilliz is a comprehensive Enterprise Resource Planning (ERP) platform designed to streamline logistics operations, built with a robust Spring Boot backend and modern frontend technologies. 
