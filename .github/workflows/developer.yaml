@@ -1,0 +1,117 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  build:
+    name: Build, Clean Up, Run JAR, and Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Log in to DockerHub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Build with Maven
+        run: mvn install -DskipTests
+
+      - name: Rename JAR file
+        id: rename_jar
+        run: |
+          JAR_NAME="projetoAgiliz.jar"
+          NEW_JAR=$(find target -name "*.jar" | head -n 1)
+          if [ -n "$NEW_JAR" ]; then
+            mv "$NEW_JAR" "target/$JAR_NAME"
+          else
+            echo "No JAR file found!"
+            exit 1
+          fi
+
+      - name: Clean up old JAR files
+        run: |
+          for jar in target/*.jar; do
+            if [ "$jar" != "target/projetoAgiliz.jar" ]; then
+              echo "Removing old JAR file: $jar"
+              rm "$jar"
+            fi
+          done
+
+      - name: Verify JAR file
+        run: ls target/projetoAgiliz.jar
+
+      - name: Build Docker image
+        run: docker build -t uglukthedingy/dev:latest .
+
+      - name: Push Docker image
+        run: docker push uglukthedingy/dev:latest
+
+  deploy:
+    needs: build
+    name: Deploy to Developer
+    runs-on: [ self-hosted, back-end, dev ]
+
+    steps:
+      - name: Log in to DockerHub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Pull image from DockerHub
+        run: sudo docker pull uglukthedingy/dev:latest
+
+      - name: Stop and remove old container if it exists
+        run: |
+          CONTAINER_ID=$(sudo docker ps -aq -f name="deploy_dev")
+          if [ -n "$CONTAINER_ID" ]; then
+            echo "Stopping old container..."
+            sudo docker stop deploy_dev
+            echo "Removing old container..."
+            sudo docker rm deploy_dev
+          else
+            echo "No running container found with the name 'deploy_dev'."
+          fi
+
+          if sudo lsof -i :8080; then
+            echo "Port 8080 is in use. Stopping process using the port..."
+            sudo lsof -t -i :8080 | xargs sudo kill -9
+          else
+            echo "Port 8080 is free."
+          fi
+
+      - name: Run new Docker container
+        run: |
+          echo "Starting new Docker container..."
+          sudo docker run -d -p 8080:8080 \
+            --network app-network \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL_DEVELOPER }}" \
+            -e DATABASE_USERNAME="${{ secrets.DATABASE_USERNAME_DEVELOPER }}" \
+            -e DATABASE_PASSWORD="${{ secrets.DATABASE_PASSWORD_DEVELOPER }}" \
+            -e API_URL="${{ secrets.API_URL }}" \
+            -e GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY }}" \
+            -e ROTEIRIZACAO_URL="${{ secrets.ROTEIRIZACAO_URL }}" \
+            -e RABBIT_HOLE="rabbitmq-container" \
+            -e ZONE_ID="America/Sao_Paulo" \
+            --name deploy_dev uglukthedingy/dev:latest
+
+      - name: Verify running containers
+        run: sudo docker ps
+
+      - name: Check container logs
+        run: sudo docker logs deploy_dev
